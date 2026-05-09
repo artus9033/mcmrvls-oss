@@ -1,0 +1,16 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+# live mode
+live:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ../venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ../venv/bin/activate && python .
+
+# lint files with Ruff
+lint:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ../venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ../venv/bin/activate && ruff check

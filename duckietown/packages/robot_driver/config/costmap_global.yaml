@@ -1,0 +1,17 @@
+# Ref: http://wiki.ros.org/costmap_2d
+global_costmap:
+  # robot_base_frame: defined in launch file dynamically based on $(arg veh)
+
+  # update_frequency: 2.0
+  # publish_frequency: 2.0
+
+  rolling_window: false
+
+  inflation_radius: 0.5 # how far away from obstacles to keep the robot
+  cost_scaling_factor: 5.0 # higher = costs drop off faster
+  footprint_padding: 0
+
+  plugins:
+    - {name: static_layer, type: 'costmap_2d::StaticLayer'}
+    - {name: obstacle_layer, type: 'costmap_2d::ObstacleLayer'}
+    - {name: inflation_layer, type: 'costmap_2d::InflationLayer'}

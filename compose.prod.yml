@@ -1,0 +1,10 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.prod
+      additional_contexts:
+        - frontend=./frontend
+    ports:
+      - "6001:6001"
+    hostname: server

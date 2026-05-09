@@ -1,0 +1,17 @@
+<launch>
+    <!-- Robot model -->
+    <arg name="robot_xurdf" value="$(find robot_driver)/urdf/duckiebot.urdf.xacro"
+            doc="Location of the URDF XACRO file for the robot type"/>
+
+    <!-- DT Vehicle number argument -->
+    <arg name="veh" doc="The DuckieTown vehicle number, used to forward this to yaml configuration files" />
+
+    <arg name="robot_configuration" doc="The configuration of the robot. For example DB19, DB20, ..." value="DB21M"/>
+
+    <param name="robot_description" command="xacro '$(arg robot_xurdf)' model:=$(arg robot_configuration) veh:=$(arg veh)"/>
+        
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+        <param name="publish_frequency" type="double" value="10.0" />
+        <remap from="joint_states" to="/$(arg veh)/joint_states" />
+    </node>
+</launch>

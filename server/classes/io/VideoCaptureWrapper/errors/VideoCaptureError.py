@@ -1,0 +1,2 @@
+class VideoCaptureError(Exception):
+    pass

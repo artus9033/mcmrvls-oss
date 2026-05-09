@@ -1,0 +1,35 @@
+FROM python:3.12
+
+RUN apt update && apt install -y \
+      vim \
+      wget \
+      net-tools \
+      iproute2 \
+      iputils-ping \
+      # build prerequisites for Tracy
+      git \
+      cmake \
+      gcc \
+      g++ \
+      make \
+      # OpenCV dependencies
+      ffmpeg libsm6 libxext6
+
+# temporarily copy the requirements & install deps globally;
+# the dir will be then replaced by volume mount for development
+COPY /requirements.txt /server/requirements.txt
+WORKDIR /server
+RUN pip install -r requirements.txt
+
+# clone, build & install tracy profiler
+WORKDIR /tracy_ws
+RUN git clone https://github.com/wolfpld/tracy.git /tracy_ws/tracy
+RUN cd tracy && git checkout 91c17abcc78c6eabf5639c81c538977264c94692
+
+WORKDIR /tracy_ws/scriptdir
+COPY ./installTracyPython.sh installTracyPython.sh
+RUN chmod +x installTracyPython.sh
+RUN bash installTracyPython.sh
+RUN pip install /tracy_ws/tracy/python/dist/*.whl
+
+ENTRYPOINT ["/server/entrypoint.sh"]

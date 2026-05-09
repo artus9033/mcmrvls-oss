@@ -1,0 +1,15 @@
+FROM node:20
+
+RUN apt update && apt install -y \
+      vim \
+      wget \
+      net-tools \
+      iproute2 \
+      iputils-ping \
+      python3-pip
+
+WORKDIR /frontend
+
+RUN corepack enable
+
+ENTRYPOINT ["/frontend/entrypoint.dev.sh"]

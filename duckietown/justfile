@@ -1,0 +1,10 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+build:
+    dts devel build
+
+run-driver vehicle aprilTagID:
+    dts devel run -R {{vehicle}} -A "{{aprilTagID}}"

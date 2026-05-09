@@ -1,0 +1,57 @@
+<launch>
+    <!-- M-C M-R VLS Server IP address -->
+    <arg name="server_address" doc="IP address for the multicamera localization server" default="localhost" />
+    <!-- M-C M-R VLS Server port -->
+    <arg name="server_port" doc="Port for the multicamera localization server" default="6001" />
+    <!-- Robot ID -->
+    <arg name="robot_id" doc="The ID of the robot for which to look for in detections from the server" />
+    <!-- DT Vehicle number argument -->
+    <arg name="veh" doc="The DuckieTown vehicle number, used to forward this to yaml configuration files" />
+
+    <!-- M-C M-R VLS -->
+    <include file="$(find multicamera_localization)/launch/mcmrvls_full.launch">
+        <arg name="server_address" value="$(arg server_address)"/>
+        <arg name="server_port" value="$(arg server_port)"/>
+        <arg name="robot_id" value="$(arg robot_id)"/>
+        <arg name="veh" value="$(arg veh)"/>
+    </include>
+
+    <group ns="$(arg veh)">
+        <!-- Path planning -->
+        <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+            <rosparam file="$(find robot_driver)/config/move_base.yaml" command="load" />
+
+            <param name="global_costmap/robot_base_frame" value="$(arg veh)/base" />
+            <rosparam file="$(find robot_driver)/config/costmap_common.yaml" command="load" ns="global_costmap" />
+            <param name="local_costmap/robot_base_frame" value="$(arg veh)/base" />
+            <rosparam file="$(find robot_driver)/config/costmap_common.yaml" command="load" ns="local_costmap" />
+
+            <rosparam file="$(find robot_driver)/config/costmap_global.yaml" command="load" />
+            <rosparam file="$(find robot_driver)/config/costmap_local.yaml" command="load" />
+
+            <rosparam file="$(find robot_driver)/config/planner_global.yaml" command="load" />
+            <rosparam file="$(find robot_driver)/config/planner_local.yaml" command="load" />
+
+            <!-- below: remap the cmd_vel to a topic that will be picked up by cmd_vel_dt_mux node -->
+            <remap from="cmd_vel" to="planner_cmd_vel" />
+            <remap from="map" to="/mcmrvls/map"/>
+            <remap from="static_map" to="/mcmrvls/static_map"/>
+        </node>
+
+        <!-- DT URDF model node -->
+        <include file="$(find robot_driver)/launch/dt_urdf.launch">
+            <arg name="veh" value="$(arg veh)"/>
+        </include>
+    </group>
+
+    <!-- Converter from move_base to DuckieTown: /{veh}/planner_cmd_vel -> /{veh}/car_cmd_switch_node/cmd -->
+    <node pkg="robot_driver" type="cmd_vel_dt_mux.py" name="cmd_vel_dt_mux" output="screen">
+        <param name="veh" value="$(arg veh)"/>
+    </node>
+
+    <!-- <node pkg="robot_driver" type="local_planner.py" name="local_planner" output="screen">
+        <param name="veh" value="$(arg veh)"/>
+    </node> -->
+
+    <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find robot_driver)/rviz/driving.rviz" /> -->
+</launch>

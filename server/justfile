@@ -1,0 +1,53 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+# playback mode
+video $RUN_FROM_PLAYBACK_DIRECTORY:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && python .
+
+# live camera mode
+live:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && python .
+
+# playback mode with memray profiler
+video-mem $RUN_FROM_PLAYBACK_DIRECTORY:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && export PYTHONPATH=$(pwd)/.. && PYTHONMALLOC=malloc python -m memray run -f --compress-on-exit --aggregate -o memray-server.bin -m server
+    just memray-report
+
+# live camera mode with memray profiler
+live-mem:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && export PYTHONPATH=$(pwd)/.. && PYTHONMALLOC=malloc python -m memray run -f --compress-on-exit --aggregate -o memray-server.bin -m server
+    just memray-report
+
+# exports a memray flamegraph
+memray-report:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && python -m memray flamegraph -f --leaks memray-server.bin -o memray-server-flamegraph.html
+    open memray-server-flamegraph.html
+
+# lint files with Ruff
+lint:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && ruff check
+
+format:
+    #!/bin/bash
+    export DYLD_LIBRARY_PATH=$(realpath ./venv/lib):$DYLD_LIBRARY_PATH # necessary for apriltag
+    source ./venv/bin/activate && ruff format
+
+build-docs:
+    #!/bin/bash
+    cd docs
+    source ./venv/bin/activate && sphinx-build -M html source build

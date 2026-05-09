@@ -1,0 +1,4 @@
+# LIST YOUR PYTHON3 PACKAGES HERE
+# NOTE: only place non-Duckietown libraries here; pin versions only if necessary
+python-socketio[client]==5.11.4
+scipy==1.10.1

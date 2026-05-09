@@ -1,0 +1,9 @@
+[submodule "server/res/april-tags/apriltag-imgs"]
+	path = server/res/april-tags/apriltag-imgs
+	url = https://github.com/AprilRobotics/apriltag-imgs.git
+[submodule "tracy"]
+	path = tracy
+	url = https://github.com/wolfpld/tracy.git
+[submodule "py-wrapper-apriltag/vendor/apriltag"]
+	path = vendor/apriltag
+	url = https://github.com/AprilRobotics/apriltag.git

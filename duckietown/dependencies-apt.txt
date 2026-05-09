@@ -1,0 +1,9 @@
+# LIST YOUR APT PACKAGES HERE
+ros-noetic-std-msgs
+ros-noetic-nav-msgs
+ros-noetic-geometry-msgs
+ros-noetic-nav-2d-msgs
+ros-noetic-navfn
+ros-noetic-base-local-planner
+ros-noetic-move-base
+ros-noetic-teb-local-planner

@@ -1,0 +1,25 @@
+services:
+  frontend:
+    network_mode: 'host'
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/frontend
+    # ports:
+    #   - '3000:3000'
+    depends_on:
+      - server
+    hostname: frontend
+
+  server:
+    network_mode: 'host'
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    command: still
+    volumes:
+      - ./server:/server
+    # ports:
+    #   - '6001:6001'
+    hostname: server

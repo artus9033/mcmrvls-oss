@@ -1,0 +1,9 @@
+{
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {}
+  },
+  "python.analysis.extraPaths": ["./server"],
+  "editor.formatOnSave": true,
+  "cursorpyright.analysis.extraPaths": ["./server"]
+}

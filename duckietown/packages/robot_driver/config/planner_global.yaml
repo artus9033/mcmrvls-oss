@@ -1,0 +1,5 @@
+# Ref: http://wiki.ros.org/navfn
+base_global_planner: navfn/NavfnROS
+
+NavfnROS:
+  visualize_potential: true

@@ -1,0 +1,2 @@
+class VideoEndedException(Exception):
+    pass

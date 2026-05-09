@@ -1,0 +1,11 @@
+# Ref: http://wiki.ros.org/costmap_2d
+local_costmap:
+  # robot_base_frame: defined in launch file dynamically based on $(arg veh)
+
+  # update_frequency: 4.0
+  # publish_frequency: 4.0
+
+  rolling_window: true
+
+  plugins:
+    - {name: obstacle_layer, type: 'costmap_2d::ObstacleLayer'}

@@ -1,0 +1,32 @@
+FROM node:20 as build_frontend
+
+COPY --from=frontend . /frontend
+WORKDIR /frontend
+
+RUN corepack enable
+RUN corepack install
+
+RUN pnpm install
+
+RUN pnpm build
+
+FROM python:3.12
+
+RUN apt update && apt install -y \
+      # OpenCV dependencies
+      ffmpeg libsm6 libxext6 \
+      # YAML processor for container configuration
+      yq
+
+COPY . /server
+WORKDIR /server
+
+COPY --from=build_frontend /frontend/build /server/frontend_built
+
+RUN chmod +x entrypoint.sh
+RUN pip install -r requirements.txt
+
+RUN cp config.example.yaml config.yaml
+RUN yq -y -i '.debug = false' config.yaml
+
+ENTRYPOINT ["/server/entrypoint.sh"]

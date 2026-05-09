@@ -1,0 +1,24 @@
+<launch>
+    <!-- M-C M-R VLS Server IP address -->
+    <arg name="server_address" doc="IP address for the multicamera localization server" default="localhost" />
+    <!-- M-C M-R VLS Server port -->
+    <arg name="server_port" doc="Port for the multicamera localization server" default="6001" />
+    <!-- Robot ID -->
+    <arg name="robot_id" doc="The ID of the robot for which to look for in detections from the server" />
+    <!-- DT Vehicle number argument -->
+    <arg name="veh" doc="The DuckieTown vehicle number, used to forward this to yaml configuration files" />
+
+    <!-- Occupancy grid node (map) -->
+    <include file="$(find multicamera_localization)/launch/map_segmentation.launch">
+        <arg name="server_address" value="$(arg server_address)"/>
+        <arg name="server_port" value="$(arg server_port)"/>
+    </include>
+
+    <!-- TF & robot pose node -->
+    <include file="$(find multicamera_localization)/launch/robot_localization.launch">
+        <arg name="server_address" value="$(arg server_address)"/>
+        <arg name="server_port" value="$(arg server_port)"/>
+        <arg name="robot_id" value="$(arg robot_id)"/>
+        <arg name="veh" value="$(arg veh)"/>
+    </include>
+</launch>

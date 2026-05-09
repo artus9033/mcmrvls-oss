@@ -1,0 +1,45 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "server live",
+      "type": "debugpy",
+      "request": "launch",
+      "program": ".",
+      "cwd": "${workspaceFolder}/server"
+    },
+    {
+      "name": "server playback (still)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": ".",
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "RUN_FROM_PLAYBACK_DIRECTORY": "still"
+      }
+    },
+    {
+      "name": "server playback (moving-recalculate)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": ".",
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "RUN_FROM_PLAYBACK_DIRECTORY": "moving-recalculate"
+      }
+    },
+    {
+      "name": "server playback (moving-recalculate-2-frames)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": ".",
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "RUN_FROM_PLAYBACK_DIRECTORY": "moving-recalculate-2-frames"
+      }
+    }
+  ]
+}

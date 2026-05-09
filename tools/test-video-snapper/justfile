@@ -1,0 +1,8 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+run:
+    #!/bin/bash
+    source ../../server/venv/bin/activate && python main.py

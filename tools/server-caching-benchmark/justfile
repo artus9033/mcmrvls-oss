@@ -1,0 +1,9 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+run:
+    #!/bin/zsh
+    source ~/.zshrc
+    TRACY_CAPTURE_PATH=$(which tracy-capture) TRACY_CSVEXPORT_PATH=$(which tracy-csvexport) python runner.py

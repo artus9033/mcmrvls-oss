@@ -1,0 +1,23 @@
+<launch>
+    <!-- M-C M-R VLS Server IP address -->
+    <arg name="server_address" doc="IP address for the multicamera localization server" default="localhost" />
+    <!-- M-C M-R VLS Server port -->
+    <arg name="server_port" doc="Port for the multicamera localization server" default="6001" />
+    <!-- Robot ID -->
+    <arg name="robot_id" doc="The ID of the robot for which to look for in detections from the server" />
+    <!-- DT Vehicle number argument -->
+    <arg name="veh" doc="The DuckieTown vehicle number, used to forward this to yaml configuration files" />
+
+    <group ns="mcmrvls">
+        <node name="multicamera_robot_localization_node" pkg="multicamera_localization" type="robot_localization_node.py" output="screen">
+            <param name="server_address" value="$(arg server_address)"/>
+            <param name="server_port" value="$(arg server_port)"/>
+            <param name="robot_id" value="$(arg robot_id)"/>
+            <param name="veh" value="$(arg veh)"/>
+        </node>
+
+        <node name="multicamera_localization_status_listener_node" pkg="multicamera_localization" type="status_listener_node.py" output="screen">
+            <param name="veh" value="$(arg veh)"/>
+        </node>
+    </group>
+</launch>
