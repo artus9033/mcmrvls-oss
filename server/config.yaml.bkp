@@ -1,0 +1,83 @@
+---
+debug: true
+profiling: true
+
+algorithmLogLevel: 'INFO'
+algorithmInstrumenterLogLevel: 'INFO'
+serverLogLevel: 'INFO'
+httpLogLevel: 'INFO'
+interThreadMemoryLogLevel: 'INFO'
+otherLogLevel: 'INFO'
+
+algorithmJPEGQuality: 50
+algorithmWaitForHTTPServerReady: true
+recalcHeuristicExtinguishingMarkerConsecutiveRoundsDelay: 4
+recalcHeuristicAppearingMarkerConsecutiveRoundsDelay: 4
+
+# Marker visibility algorithm (EWMA + hysteresis)
+markerVisibilityEwmaAlpha: 0.35 # smoothing factor in (0,1); higher = faster response
+markerVisibilityThresholdHigh: 0.75 # confirm visible when score >= this
+markerVisibilityThresholdLow: 0.25 # confirm invisible when score <= this
+
+caching:
+  enabled: true
+  stitchingHomographyCache: true
+  topDownHomographyCache: true
+  mapSegmentationThrottle: true
+  mapSegmentationIntervalSeconds: 3
+
+# Preallocation toggles (for benchmarking and tests)
+preallocation:
+  adaptiveBufferPreallocation: true # adaptive numpy buffer for topDownImg
+  homographyBufferPreallocation: true # preallocated 3x3 arrays for homographies
+
+http:
+  host: 0.0.0.0
+  port: 6001
+
+map:
+  TL: 585
+  TR: 583
+  BL: 586
+  BR: 579
+
+dimensions:
+  mapWidth: 300 # centimeters
+  mapHeight: 300 # centimeters
+
+  markerWidth: 14 # centimeters
+  markerHeight: 14 # centimeters
+
+# AprilTag robot pose filtering (EKF, unicycle / diff-drive style dynamics in normalized map coords).
+# Override any key per robot under robots[].kalman.
+robotKalmanFilter:
+  enabled: true
+  gracePeriodRounds: 8
+  maxSpeedNormPerSec: 0.2
+  maxYawRateDegPerSec: 200
+  processNoiseLinearVelocityStd: 0.03
+  processNoiseAngularRateStdDeg: 45
+  positionSigmaMin: 0.001
+  positionSigmaMax: 0.06
+  azimuthSigmaMinDeg: 2
+  azimuthSigmaMaxDeg: 30
+  positionSigmaFromAreaCoefficient: 0.006
+  azimuthSigmaFromBaselineCoefficientDeg: 300
+
+robots:
+  - id: 500
+    host: d1.local
+
+  - id: 406
+    host: d2.local
+
+  - id: 402
+    host: d3.local
+
+  # - id: 580
+  #   host: d4.local
+
+  - id: 000 # TODO
+    host: d5.local
+
+playbackModeLoop: False

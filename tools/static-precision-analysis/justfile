@@ -1,0 +1,19 @@
+set windows-powershell := true
+
+help:
+    just --list
+
+# Run homography + epipolar, kalman on/off, then plot comparisons
+run:
+    #!/bin/bash
+    set -euo pipefail
+    source ../../server/venv/bin/activate
+    pip install -q -r requirements.txt
+    python runner.py "$@"
+
+plot:
+    #!/bin/bash
+    set -euo pipefail
+    source ../../server/venv/bin/activate
+    pip install -q -r requirements.txt
+    python runner.py --plot-only "$@"
