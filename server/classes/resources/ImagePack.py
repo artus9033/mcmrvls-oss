@@ -27,6 +27,17 @@ class ImagePack:
 
         self.isStitchingResult = isStitchingResult
 
+        # Cumulative homography from each source camera's raw pixels into this
+        # pack's image frame, keyed by the camera's stage id. Raw packs map to
+        # themselves; the stitcher composes these through every stage so any
+        # raw-camera point can be placed exactly on the final mosaic.
+        self.cameraWarps: dict[str, np.ndarray] = {}
+        self.cameraSizes: dict[str, tuple[int, int]] = {}
+        if not self.isStitchingResult:
+            self.cameraWarps[str(stitchingStageDescription)] = np.eye(3, dtype=np.float64)
+            if image is not None:
+                self.cameraSizes[str(stitchingStageDescription)] = (image.shape[1], image.shape[0])
+
         if not self.isStitchingResult:
             self.findAndAppendDetections()
 

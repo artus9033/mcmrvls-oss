@@ -1,52 +1,52 @@
-from typing import Iterable, Sequence
+from collections.abc import Callable
+from typing import Any, Iterable, Literal, Sequence
 
 from classes.marker import CompositeDetection, MarkerDetection
-from classes.types import FloatingPoint2D, MarkerData, Point2D
-import cv2
+from classes.types import MarkerData
 import numpy as np
+from utils.detectors.detector_params import merge_marker_detector_params
 from utils.geometry import calculateCentroid
 from utils.tracing import Tracing
 
+MarkerDetectorBackend = Literal["apriltag", "aruco"]
+
+_detect_markers: Callable[[np.ndarray], set[MarkerDetection]] | None = None
+_active_backend: MarkerDetectorBackend | None = None
+_active_params: dict[str, dict[str, Any]] = merge_marker_detector_params(None)
+
+
+def configure_marker_detector(
+    backend: MarkerDetectorBackend,
+    params: dict[str, Any] | None = None,
+) -> None:
+    global _detect_markers, _active_backend, _active_params
+
+    merged = merge_marker_detector_params(params)
+    _active_params = merged
+    _active_backend = backend
+
+    if backend == "aruco":
+        from utils.detectors.aruco_backend import configure_aruco, detect_markers
+
+        configure_aruco(merged["aruco"])
+    else:
+        from utils.detectors.apriltag_backend import configure_apriltag, detect_markers
+
+        configure_apriltag(merged["apriltag"])
+
+    _detect_markers = detect_markers
+
+
+def get_active_marker_detector_config() -> tuple[MarkerDetectorBackend, dict[str, dict[str, Any]]]:
+    backend = _active_backend or "apriltag"
+    return backend, _active_params
+
+
 def getDetections(image: np.ndarray) -> set[MarkerDetection]:
     with Tracing.ScopedZone("getDetections"):
-        arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36H11)
-        arucoParams = cv2.aruco.DetectorParameters()
-        arucoParams.detectInvertedMarker = True
-        arucoParams.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
-        # arucoParams.cornerRefinementMaxIterations = 100
-        # arucoParams.cornerRefinementMinAccuracy = 0.01
-        detector = cv2.aruco.ArucoDetector(dictionary=arucoDict, detectorParams=arucoParams)
-        (corners, ids, rejected) = detector.detectMarkers(image)
-
-        detections: set[MarkerDetection] = set()
-
-        if ids is None:
-            return set()
-
-        # flatten the ArUco IDs list
-        ids = ids.flatten()
-        # loop over the detected ArUCo corners
-        for markerCorner, markerID in zip(corners, ids):
-            # extract the marker corners (which are always returned in
-            # top-left, top-right, bottom-right, and bottom-left order)
-            corners = markerCorner.reshape((4, 2))
-            (topLeft, topRight, bottomRight, bottomLeft) = corners
-            # convert each of the (x, y)-coordinate pairs to integers
-            topRight = (int(topRight[0]), int(topRight[1]))
-            bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-            bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-            topLeft = (int(topLeft[0]), int(topLeft[1]))
-
-            orderedPoints: list[Point2D | FloatingPoint2D] = [
-                topLeft,
-                topRight,
-                bottomLeft,
-                bottomRight,
-            ]
-
-            detections.add(MarkerDetection(*orderedPoints, data=markerID))
-
-        return detections
+        if _detect_markers is None:
+            configure_marker_detector("apriltag")
+        return _detect_markers(image)
 
 
 def averageDetections(detections: Sequence[MarkerDetection]) -> MarkerDetection:

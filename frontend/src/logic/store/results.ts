@@ -39,6 +39,7 @@ export const createResultsSlice: StoreSliceCreator<ResultsSlice> = (
     detections: [],
     topDownDetections: [],
     dataStale: true,
+    calibration: undefined,
   },
   algorithmPreviews: {
     topDownImgStrJpeg: null,
@@ -66,6 +67,9 @@ export const createResultsSlice: StoreSliceCreator<ResultsSlice> = (
       state.results.algorithmResults.detections = data.detections;
       state.results.algorithmResults.topDownDetections = data.topDownDetections;
       state.results.algorithmResults.dataStale = data.dataStale ?? true;
+      if (data.calibration !== undefined) {
+        state.results.algorithmResults.calibration = data.calibration;
+      }
 
       state.results.lastDataTimestamp = Date.now();
 

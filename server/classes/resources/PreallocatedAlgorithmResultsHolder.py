@@ -36,6 +36,9 @@ class PreallocatedAlgorithmResultsHolder:
     topDownCacheMisses: int
     recomputeReasons: dict[str, int]
 
+    # marker visibility telemetry (per-camera + fused view counts)
+    visibilityTelemetry: dict | None
+
     def __init__(
         self,
         config: AlgorithmConfig,
@@ -47,6 +50,7 @@ class PreallocatedAlgorithmResultsHolder:
         self.topDownCacheHits = 0
         self.topDownCacheMisses = 0
         self.recomputeReasons = {}
+        self.visibilityTelemetry = None
 
         self._adaptiveBufferPreallocation = config.preallocation.adaptiveBufferPreallocation
         alloc_config = AdaptiveBufferAllocatorConfig()

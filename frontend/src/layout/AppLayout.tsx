@@ -25,7 +25,12 @@ import {AppContents} from './AppContents';
 import {socketEndpoint} from '../logic/store/socketio';
 import {ThemeProvider} from '@emotion/react';
 import {createTheme} from '../logic/theme';
-import {DarkMode, LightMode} from '@mui/icons-material';
+import {
+  Cached,
+  CameraAlt,
+  DarkMode,
+  LightMode,
+} from '@mui/icons-material';
 import {HeaderConfig} from '@mui-treasury/layout/Header/HeaderBuilder';
 
 const scheme = getStandardScheme();
@@ -51,9 +56,23 @@ function AppLayout() {
     (state) => state.results.algorithmResults.dataStale ?? true,
   );
   const dataStale = _dataStale || !isConnected;
+  const calibration = useAppState(
+    (state) => state.results.algorithmResults.calibration,
+  );
+  const useEpipolar = calibration?.useEpipolarGeometry === true;
+  const calibBusy =
+    calibration?.status === 'running' ||
+    calibration?.status === 'pending' ||
+    calibration?.status === 'requested';
 
   const darkMode = useAppState((state) => state.settings.darkMode);
   const toggleDarkMode = useAppState((state) => state.settings.toggleDarkMode);
+  const invalidateCaches = useAppState(
+    (state) => state.settings.invalidateCaches,
+  );
+  const recalibrateCameras = useAppState(
+    (state) => state.settings.recalibrateCameras,
+  );
 
   const statusChip = useMemo(
     () =>
@@ -70,6 +89,14 @@ function AppLayout() {
   );
 
   const theme = useMemo(() => createTheme(darkMode), [darkMode]);
+
+  const recalibrateTooltip = !useEpipolar
+    ? 'Recalibrate is only available with the epipolar solver'
+    : calibBusy
+    ? `Calibration ${calibration?.status ?? '…'}`
+    : calibration?.error
+    ? `Last error: ${calibration.error}. Click to retry.`
+    : 'Recalibrate cameras from live AprilTag detections';
 
   return (
     <ThemeProvider theme={theme}>
@@ -139,6 +166,31 @@ function AppLayout() {
 
           {/* right block */}
           <div className={cx(classes.fullHeight, classes.rowCentered)}>
+            <Tooltip
+              title="Invalidate stitching caches (same as server CLI 'r')"
+              arrow>
+              <span>
+                <IconButton
+                  onClick={invalidateCaches}
+                  disabled={!isConnected}
+                  aria-label="Invalidate caches">
+                  <Cached />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {useEpipolar && (
+              <Tooltip title={recalibrateTooltip} arrow>
+                <span>
+                  <IconButton
+                    onClick={recalibrateCameras}
+                    disabled={!isConnected || calibBusy}
+                    color={calibration?.error ? 'error' : 'default'}
+                    aria-label="Recalibrate cameras">
+                    <CameraAlt />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
             <Tooltip
               title={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
               arrow>

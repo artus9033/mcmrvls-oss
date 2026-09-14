@@ -2,12 +2,12 @@
 debug: false
 profiling: false
 
-algorithmLogLevel: 'WARNING'
-algorithmInstrumenterLogLevel: 'WARNING'
-serverLogLevel: 'WARNING'
-httpLogLevel: 'WARNING'
-interThreadMemoryLogLevel: 'INFO'
-otherLogLevel: 'WARNING'
+algorithmLogLevel: "WARNING"
+algorithmInstrumenterLogLevel: "WARNING"
+serverLogLevel: "WARNING"
+httpLogLevel: "WARNING"
+interThreadMemoryLogLevel: "INFO"
+otherLogLevel: "WARNING"
 
 algorithmJPEGQuality: 50
 algorithmWaitForHTTPServerReady: true
@@ -48,19 +48,33 @@ dimensions:
   markerWidth: 14 # centimeters
   markerHeight: 14 # centimeters
 
+# Calibrated by against the eight
+# dyn-4cam-* trajectories on the orthorectified solver. R is measured from raw-detection
+# residuals vs ground truth, Q from the ground-truth motion itself; NIS validates the
+# result rather than fitting it. See that tool's README for method and limitations.
 robotKalmanFilter:
   enabled: true
-  gracePeriodRounds: 8
-  maxSpeedNormPerSec: 0.2
-  maxYawRateDegPerSec: 200
-  processNoiseLinearVelocityStd: 0.03
-  processNoiseAngularRateStdDeg: 45
-  positionSigmaMin: 0.001
-  positionSigmaMax: 0.06
-  azimuthSigmaMinDeg: 2
-  azimuthSigmaMaxDeg: 30
-  positionSigmaFromAreaCoefficient: 0.006
-  azimuthSigmaFromBaselineCoefficientDeg: 300
+  # Largest coasting horizon whose error stays within the error the filter achieves with
+  # measurements. Not the p95 dropout length: dropouts are bimodal (a single round, or
+  # multi-second stretches with the robot outside every camera).
+  gracePeriodRounds: 16
+  # 1.5x the p99.5 of a smoothed ground-truth derivative. Adjacent-sample derivatives on
+  # the interpolated keyframe track spike to 0.95 norm/s against a 0.11 median.
+  maxSpeedNormPerSec: 0.4256
+  maxYawRateDegPerSec: 289
+  # Random-walk densities on speed and yaw rate, measured as the std of their increments
+  # per sqrt(dt). The previous values (0.03, 45) were ~14x and ~18x too large.
+  processNoiseLinearVelocityStd: 0.00217
+  processNoiseAngularRateStdDeg: 2.571
+  positionSigmaMin: 0.05608
+  positionSigmaMax: 0.4581
+  # Azimuth noise does not follow the 1/baseline law on this data (the geometry fit
+  # explains less variance than a flat line, R^2 = -0.42), so the bounds are pinned
+  # together to a measured constant and the coefficient below is inert.
+  azimuthSigmaMinDeg: 6.864
+  azimuthSigmaMaxDeg: 6.864
+  positionSigmaFromAreaCoefficient: 0.003211
+  azimuthSigmaFromBaselineCoefficientDeg: 0.08568
 
 robots:
   - id: 500
@@ -82,3 +96,90 @@ rtspSources:
   - rtsp://mcmrvls.local:8554/unicast
 
 playbackModeLoop: True
+
+# Marker detector backend: apriltag (vendor) or aruco (OpenCV)
+markerDetector: apriltag
+
+# Optional per-backend hyperparameters. Values below are Optuna-calibrated
+# operating points (TPE, 40 trials per backend, objective = live position RMSE
+# on a train split of recorded scenarios).
+# Omitting a key falls back to the library default.
+markerDetectorParams:
+  apriltag:
+    threads: null # null -> cpu_count
+    maxhamming: 2
+    decimate: 1.002018539051743 # library default: 1.0
+    blur: 0.5034629328238523 # quad_sigma; library default: 0.0
+    refine_edges: true
+  aruco:
+    detectInvertedMarker: true
+    cornerRefinementMethod: subpix # none|subpix|contour|apriltag; library default: contour
+    adaptiveThreshWinSizeMin: 5 # library default: 3
+    adaptiveThreshWinSizeMax: 31 # library default: 23
+    adaptiveThreshWinSizeStep: 9 # library default: 10
+    adaptiveThreshConstant: 5.201463429037785 # library default: 7
+    minMarkerPerimeterRate: 0.03314365975676495 # library default: 0.03
+    maxMarkerPerimeterRate: 3.5090866281800923 # library default: 4.0
+    polygonalApproxAccuracyRate: 0.03066842399684675 # library default: 0.03
+    cornerRefinementWinSize: 3 # library default: 5
+    cornerRefinementMaxIterations: 36 # library default: 30
+    cornerRefinementMinAccuracy: 0.11327840166857985 # library default: 0.1
+    errorCorrectionRate: 0.5749096751601165 # library default: 0.6
+    aprilTagQuadDecimate: 0.8887560336391165 # library default: 0.0
+    aprilTagQuadSigma: 0.664590360927479 # library default: 0.0
+
+# Map segmentation strategy for the top-down map image.
+#   classical - YCrCb/LAB channel thresholding + morphology (no extra dependencies)
+#   unet      - multi-head UNet (requires torch and a trained checkpoint copied
+#               into res/models/; if the checkpoint is
+#               missing the server logs a warning and falls back to classical)
+mapSegmentation:
+  strategy: classical
+  unet:
+    modelPath: res/models/unet_multihead.pth # relative to the server directory
+    architecture: multihead # multihead (road + marking heads) | singlehead (4-class)
+    inputSize: 512 # model input resolution (matches training INPUT_SIZE)
+    device: auto # auto|cpu|cuda|mps (auto: cuda > mps > cpu)
+    halfPrecision: auto # auto|true|false (auto: fp16 on CUDA only)
+    maskMarkingsToRoads: true # suppress red/yellow predictions off predicted roads
+
+# Playback scenarios can override any of the above keys via
+# res/video/<scenario>/config.yaml (deep-merged on top of this file).
+# Example: set map corner tag IDs per recording without changing global config.
+
+# Geometry solver: false = homography (planar), true = epipolar (3D)
+useEpipolarGeometry: false
+
+# Per-camera consensus robot measurements: complementary to whichever base
+# solver is active. Robot poses are computed from each raw camera's exact floor
+# homography (live floor-tag atlas) and median-fused across cameras, replacing
+# the base solver's measurement per robot; the base measurement remains the
+# fallback for robots the consensus cannot see. The stitched mosaic keeps
+# serving visualization either way.
+usePerCameraSolver: false
+
+# Fit the stitched -> top-down homography over the corner tags PLUS interior
+# floor tags with atlas-known positions (least squares) instead of the 4 corner
+# points only; averages stitching distortion across the map instead of pinning
+# it at the corners. Falls back to the 4-corner fit until the atlas is solved.
+topDownFitUseInteriorTags: true
+
+# Place undetected map-corner tags via the gated floor-atlas estimators (exact
+# camera model, then local atlas fit) before the legacy global-fit fallback.
+# Disable together with topDownFitUseInteriorTags for a pre-atlas ablation.
+useAtlasCornerResolution: true
+
+# Top-down map generation strategy:
+#   mosaic         - historical path: warp the stitched mosaic via the corner-tag
+#                    homography M (piecewise-projective residuals included)
+#   orthorectified - atlas-orthorectified fusion: warp each RAW camera directly
+#                    into the map frame via its exact floor-atlas homography and
+#                    composite there; no piecewise distortion, boundary exactly
+#                    rectangular, robot poses from per-camera consensus. Falls
+#                    back to mosaic until the atlas solves.
+topDownStrategy: orthorectified
+
+# When epipolar is on, estimate camera calibrations from live frames (startup and
+# on-demand via the frontend recalibrate button). Calibrations are kept in memory
+# only for the current run.
+# autoCalibrateOnStart: true

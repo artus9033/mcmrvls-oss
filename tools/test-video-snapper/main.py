@@ -108,6 +108,15 @@ def main():
 
     # Open cameras and create VideoWriters
     for source in RTSPs:
+        wrapper = RTSPWrapper(logger, source)
+
+        wrapper.read()  # Wait for first frame to get dimensions
+        ret, frame = wrapper.read()
+        if not ret:
+            print(f"RTSP {source} frame read failed.")
+            wrapper.release()
+            continue
+
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
         out = cv2.VideoWriter(
             f"{dirname}/camera_{source.replace("/", "_").replace(":", "_")}.avi",
@@ -115,8 +124,6 @@ def main():
             fps,
             (frame.shape[1], frame.shape[0]),
         )
-
-        wrapper = RTSPWrapper(logger, source)
 
         caps.append(wrapper)
         writers.append(out)

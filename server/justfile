@@ -3,6 +3,10 @@ set windows-powershell := true
 help:
     just --list
 
+# build vendor/apriltag into ./venv (run after Python upgrade or vendor bump)
+build-apriltag:
+    bash ../vendor/setup.sh
+
 # playback mode
 video $RUN_FROM_PLAYBACK_DIRECTORY:
     #!/bin/bash

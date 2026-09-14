@@ -1,6 +1,16 @@
 # Multi-Camera Multi-Robot Visual Localization System (M-C M-R VLS)
 
+## Unified Solver Architecture
+
+The system now uses a **pluggable solver architecture** that abstracts geometry computation strategies:
+
+- **Homography solver** (default): pairwise planar homographies stitched into a metric top-down mosaic; the robot pose is read from the warped tag.
+- **Epipolar solver** (baseline): uncalibrated pairwise triangulation via the fundamental matrix, registered to the map through the floor plane. Kept as a comparison baseline; on a planar arena it recovers only the floor plane and needs the robot and its anchor tags in one camera pair, so it covers less of the arena than the mosaic.
+
+Switch between them with `useEpipolarGeometry` in `server/config.yaml`.
+
 - [Multi-Camera Multi-Robot Visual Localization System (M-C M-R VLS)](#multi-camera-multi-robot-visual-localization-system-m-c-m-r-vls)
+  - [Unified Solver Architecture](#unified-solver-architecture)
   - [Setup \& running (containerized)](#setup--running-containerized)
     - [Prerequisites](#prerequisites)
     - [All-in-one development compose](#all-in-one-development-compose)

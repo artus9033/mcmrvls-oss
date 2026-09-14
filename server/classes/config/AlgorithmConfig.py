@@ -1,6 +1,9 @@
 from logging import Logger
 from typing import Any
 
+from algorithms.segmentation import MapSegmentationStrategyName, configure_map_segmentation
+from utils.detections import MarkerDetectorBackend, configure_marker_detector
+
 from ..robot import RobotConfig
 from ..types import CornerSpec, DimensionsConfigKeys, MarkerData
 
@@ -75,10 +78,41 @@ class AlgorithmConfig:
         markerVisibilityEwmaAlpha: float = 0.35,
         markerVisibilityThresholdHigh: float = 0.75,
         markerVisibilityThresholdLow: float = 0.25,
+        markerDetector: MarkerDetectorBackend = "apriltag",
+        markerDetectorParams: dict[str, Any] | None = None,
+        mapSegmentation: dict[str, Any] | None = None,
+        useEpipolarGeometry: bool = True,
+        usePerCameraSolver: bool = False,
+        topDownFitUseInteriorTags: bool = True,
+        useAtlasCornerResolution: bool = True,
+        topDownStrategy: str = "mosaic",
+        camera_calibrations: dict[str, Any] | None = None,
+        autoCalibrateOnStart: bool | None = None,
     ) -> None:
         self.logger = logger
 
         self.mapDefinition = mapDefinition
+        self.useEpipolarGeometry = useEpipolarGeometry
+        self.usePerCameraSolver = usePerCameraSolver
+        self.topDownFitUseInteriorTags = topDownFitUseInteriorTags
+        self.useAtlasCornerResolution = useAtlasCornerResolution
+        self.topDownStrategy = topDownStrategy
+        self.camera_calibrations = camera_calibrations or {}
+        # Default: auto-calibrate at start whenever the epipolar solver is active.
+        self.autoCalibrateOnStart = (
+            bool(useEpipolarGeometry) if autoCalibrateOnStart is None else bool(autoCalibrateOnStart)
+        )
+        self.markerDetector = markerDetector
+        self.markerDetectorParams = markerDetectorParams or {}
+        configure_marker_detector(markerDetector, self.markerDetectorParams)
+
+        self.mapSegmentation = mapSegmentation or {}
+        self.mapSegmentationStrategy = str(self.mapSegmentation.get("strategy", "classical"))
+        configure_map_segmentation(
+            self.mapSegmentationStrategy,  # type: ignore[arg-type]
+            self.mapSegmentation,
+            logger=logger,
+        )
 
         self.detectionBoundsTolerance = 1
         self.toleranceAspectRatio = 0.18
@@ -147,6 +181,50 @@ class AlgorithmConfig:
     RATIO_MAP_EDGE_TO_MARKER_EDGE_W: float
     RATIO_MAP_EDGE_TO_MARKER_EDGE_H: float
     MAP_RATIO_W_TO_H: float
+
+    useEpipolarGeometry: bool
+    """If True, use epipolar geometry for non-coplanar markers instead of homography"""
+
+    usePerCameraSolver: bool
+    """If True, robot poses come from per-raw-camera floor-atlas homographies fused
+    across cameras (median position, circular-mean azimuth), overriding the active
+    base solver's measurement per robot (base stays as fallback). Complementary to
+    both the homography-mosaic and epipolar solvers; the mosaic keeps serving
+    visualization"""
+
+    topDownFitUseInteriorTags: bool
+    """If True, the stitched->top-down homography is least-squares fitted over the
+    corner tags plus atlas-known interior floor tags instead of the 4 corner points only"""
+
+    useAtlasCornerResolution: bool
+    """If True (default), undetected map-corner tags are placed on the mosaic by the
+    gated atlas estimators (exact camera model, then local atlas fit) before falling
+    back to the legacy global corner fit. Disable together with
+    topDownFitUseInteriorTags for a pre-atlas ablation baseline."""
+
+    topDownStrategy: str
+    """Top-down map generation strategy: "mosaic" (warp of the stitched mosaic via M)
+    or "orthorectified" (raw cameras composited directly in the map frame via the
+    floor atlas; implies per-camera consensus robot poses; falls back to mosaic
+    until the atlas solves)"""
+
+    camera_calibrations: dict[str, Any]
+    """Optional per-camera calibrations keyed by stage id (\"0\", \"1\", …) or video stem"""
+
+    autoCalibrateOnStart: bool
+    """When True and epipolar is active, estimate calibrations from live frames (memory-only)."""
+
+    markerDetector: MarkerDetectorBackend
+    """Marker detector backend: apriltag (vendor) or aruco (OpenCV)"""
+
+    markerDetectorParams: dict[str, Any]
+    """Optional per-backend detector hyperparameters from config.yaml"""
+
+    mapSegmentation: dict[str, Any]
+    """Map segmentation config section: strategy selection + per-strategy params"""
+
+    mapSegmentationStrategy: MapSegmentationStrategyName
+    """Selected map segmentation strategy: classical (thresholds) or unet"""
 
     plottingLineThickness: int
 

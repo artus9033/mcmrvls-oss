@@ -186,4 +186,101 @@ configSchema = {
         },
     },
     "playbackModeLoop": {"required": True, "type": "boolean"},
+    "markerDetector": {
+        "required": False,
+        "type": "string",
+        "allowed": ["apriltag", "aruco"],
+        "default": "apriltag",
+    },
+    "markerDetectorParams": {
+        "required": False,
+        "type": "dict",
+        "schema": {
+            "apriltag": {
+                "required": False,
+                "type": "dict",
+                "schema": {
+                    "threads": {"required": False, "type": "integer", "nullable": True, "min": 1},
+                    "maxhamming": {"required": False, "type": "integer", "min": 0, "max": 3},
+                    "decimate": {"required": False, "type": "float", "min": 0.5, "max": 8.0},
+                    "blur": {"required": False, "type": "float", "min": 0.0, "max": 4.0},
+                    "refine_edges": {"required": False, "type": "boolean"},
+                },
+            },
+            "aruco": {
+                "required": False,
+                "type": "dict",
+                "schema": {
+                    "detectInvertedMarker": {"required": False, "type": "boolean"},
+                    "cornerRefinementMethod": {
+                        "required": False,
+                        "type": "string",
+                        "allowed": ["none", "subpix", "contour", "apriltag"],
+                    },
+                    "adaptiveThreshWinSizeMin": {"required": False, "type": "integer", "min": 3},
+                    "adaptiveThreshWinSizeMax": {"required": False, "type": "integer", "min": 3},
+                    "adaptiveThreshWinSizeStep": {"required": False, "type": "integer", "min": 1},
+                    "adaptiveThreshConstant": {"required": False, "type": "float", "min": 0.0},
+                    "minMarkerPerimeterRate": {"required": False, "type": "float", "min": 0.0},
+                    "maxMarkerPerimeterRate": {"required": False, "type": "float", "min": 0.0},
+                    "polygonalApproxAccuracyRate": {"required": False, "type": "float", "min": 0.0},
+                    "cornerRefinementWinSize": {"required": False, "type": "integer", "min": 1},
+                    "cornerRefinementMaxIterations": {"required": False, "type": "integer", "min": 1},
+                    "cornerRefinementMinAccuracy": {"required": False, "type": "float", "min": 0.0},
+                    "errorCorrectionRate": {"required": False, "type": "float", "min": 0.0, "max": 1.0},
+                    "aprilTagQuadDecimate": {"required": False, "type": "float", "min": 0.0},
+                    "aprilTagQuadSigma": {"required": False, "type": "float", "min": 0.0},
+                },
+            },
+        },
+    },
+    "mapSegmentation": {
+        "required": False,
+        "type": "dict",
+        "schema": {
+            "strategy": {
+                "required": False,
+                "type": "string",
+                "allowed": ["classical", "unet"],
+                "default": "classical",
+            },
+            "classical": {
+                "required": False,
+                "type": "dict",
+                "nullable": True,
+            },
+            "unet": {
+                "required": False,
+                "type": "dict",
+                "schema": {
+                    "modelPath": {"required": False, "type": "string"},
+                    "architecture": {
+                        "required": False,
+                        "type": "string",
+                        "allowed": ["multihead", "singlehead"],
+                    },
+                    "inputSize": {"required": False, "type": "integer", "min": 64, "max": 2048},
+                    "device": {
+                        "required": False,
+                        "type": "string",
+                        "allowed": ["auto", "cpu", "cuda", "mps"],
+                    },
+                    "halfPrecision": {
+                        "required": False,
+                        "anyof": [
+                            {"type": "boolean"},
+                            {"type": "string", "allowed": ["auto"]},
+                        ],
+                    },
+                    "maskMarkingsToRoads": {"required": False, "type": "boolean"},
+                },
+            },
+        },
+    },
+    "useEpipolarGeometry": {"required": False, "type": "boolean", "default": True},
+    "usePerCameraSolver": {"required": False, "type": "boolean", "default": False},
+    "topDownFitUseInteriorTags": {"required": False, "type": "boolean", "default": True},
+    "useAtlasCornerResolution": {"required": False, "type": "boolean", "default": True},
+    "topDownStrategy": {"required": False, "type": "string", "allowed": ["mosaic", "orthorectified"], "default": "mosaic"},
+    "autoCalibrateOnStart": {"required": False, "type": "boolean", "nullable": True},
 }

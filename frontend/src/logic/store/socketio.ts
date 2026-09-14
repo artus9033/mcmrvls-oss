@@ -18,7 +18,7 @@ export interface SocketioSlice {
 
   // socket connection state mutators
   connected: () => void;
-  disconnected: () => void;
+  disconnected: (reason: Socket.DisconnectReason) => void;
   connectFailed: (error: Error) => void;
   reconnecting: () => void;
 }
@@ -36,10 +36,16 @@ export const createSocketioSlice: StoreSliceCreator<SocketioSlice> = (
   sioClient: (() => {
     const client = SocketIOClient(socketEndpoint, {
       transports: ['websocket'],
+      // fail a hanging handshake fast instead of waiting the default 20s, so
+      // that a restarting backend is picked up on the next (quick) retry
+      timeout: 4000,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 2000,
+      randomizationFactor: 0.3,
     });
 
-    client.on('disconnect', () => {
-      get().socketio.disconnected();
+    client.on('disconnect', (reason: Socket.DisconnectReason) => {
+      get().socketio.disconnected(reason);
     });
 
     client.on('connect', () => {
@@ -57,6 +63,18 @@ export const createSocketioSlice: StoreSliceCreator<SocketioSlice> = (
     client.on('all_detections', (data: AlgorithmResultsDTO) => {
       get().results.detectionsReceived(data);
     });
+
+    client.on(
+      'system_status',
+      (data: {calibration?: AlgorithmResultsDTO['calibration']}) => {
+        if (!data.calibration) {
+          return;
+        }
+        set((state) => {
+          state.results.algorithmResults.calibration = data.calibration;
+        });
+      },
+    );
 
     client.on('algorithm_previews', (data: AlgorithmPreviewsDTO) => {
       get().results.algorithmPreviewsReceived(data);
@@ -143,17 +161,24 @@ export const createSocketioSlice: StoreSliceCreator<SocketioSlice> = (
       state.socketio.isConnecting = false;
     });
   },
-  disconnected() {
+  disconnected(reason) {
     set((state) => {
       state.socketio.isConnected = false;
-      state.socketio.isConnecting = false;
+      // the client retries on its own for every reason except an explicit
+      // disconnect on either end, so go straight to 'connecting' instead of
+      // showing 'disconnected' until the first reconnect_attempt lands
+      state.socketio.isConnecting =
+        reason !== 'io client disconnect' && reason !== 'io server disconnect';
     });
   },
   connectFailed(error) {
     set((state) => {
       state.socketio.connectionError = error;
       state.socketio.isConnected = false;
-      state.socketio.isConnecting = false;
+      // a failed attempt is followed by another one as long as reconnection is
+      // still active; keeping isConnecting set avoids the status chip flipping
+      // to 'Disconnected' and back between attempts
+      state.socketio.isConnecting = state.socketio.sioClient.active;
     });
   },
   reconnecting() {

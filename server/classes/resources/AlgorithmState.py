@@ -4,6 +4,7 @@ import numpy as np
 
 from .ImagePack import ImagePack
 
+
 class AlgorithmState:
     prevH: np.ndarray | None = None
     pPrev: np.ndarray | None = None
@@ -15,6 +16,19 @@ class AlgorithmState:
     cornersH: np.ndarray | None = None
     _MBuffer: np.ndarray
     _cornersHBuffer: np.ndarray
+    
+    # Solver state (unified interface for homography and epipolar)
+    solver_state: "SolverState | None" = None
+
+    # Live floor-tag atlas (algorithms.floor_atlas.FloorAtlas), set by the main
+    # worker; None until the worker thread starts.
+    floorAtlas = None
+    # Per-camera consensus robot measurements for the current round, keyed by
+    # robot id (only populated when usePerCameraSolver is enabled).
+    percamRobotMeasurements: dict = {}
+    # Corner tag ids whose position in allCornerMarkers is synthetic
+    # (extrapolated) rather than detected this transform update.
+    extrapolatedCornerIDs: set = set()
 
     """Set to None to disable forcing a new homography matrix on the next iteration; set to a str describing tge reason to force it"""
     nextIterForceRecalcReason: str | None = None
@@ -27,11 +41,16 @@ class AlgorithmState:
     """
     imagePackDirty: bool = False
 
-    def __init__(self, homographyBufferPreallocation: bool = True):
+    def __init__(self, homographyBufferPreallocation: bool = True, solver_type: str = "homography"):
         self.allCornerMarkers = []
         self._homographyBufferPreallocation = homographyBufferPreallocation
         self._MBuffer = np.empty((3, 3), dtype=np.float64) if homographyBufferPreallocation else None
         self._cornersHBuffer = np.empty((3, 3), dtype=np.float64) if homographyBufferPreallocation else None
+        
+        # Initialize solver state based on solver type
+        from algorithms.solvers import create_solver
+        self.solver = create_solver(solver_type)
+        self.solver_state = self.solver.create_state()
 
     def handleBeforeStage(self, stitchingImagePack: ImagePack):
         """Call this before processing the pack to ensure that the state is in sync with ImagePack state"""

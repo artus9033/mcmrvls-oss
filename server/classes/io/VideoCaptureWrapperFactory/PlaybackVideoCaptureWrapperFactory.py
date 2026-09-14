@@ -26,23 +26,25 @@ class PlaybackVideoCaptureWrapperFactory(AbstractVideoCaptureWrapperFactory):
             logger.error(msg)
             raise Exception(msg)
 
-        files = os.listdir(playbackDir)
+        files = sorted(os.listdir(playbackDir))
 
         if len(files) == 0:
             msg = f"No files found in playback directory {playbackDir}"
             logger.error(msg)
             raise Exception(msg)
 
-        for i, file in enumerate(files):
+        video_index = 0
+        for file in files:
             # check if this is a video file
             if isVideoFile(file):
                 wrappers.append(
                     PlaybackVideoCaptureWrapper(
                         logger=logger,
                         video_path=os.path.join(playbackDir, file),
-                        capture_index=i,
+                        capture_index=video_index,
                         loop=loop,
                     )
                 )
+                video_index += 1
 
         return wrappers

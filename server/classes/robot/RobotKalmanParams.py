@@ -41,19 +41,27 @@ class RobotKalmanParams:
 
     @staticmethod
     def hard_defaults() -> RobotKalmanParams:
+        """
+        Calibrated against the eight dyn-4cam-* trajectories on the orthorectified solver
+        by calibration: R measured from
+        raw-detection residuals vs ground truth, Q from the ground-truth motion itself.
+        Keep in sync with the robotKalmanFilter block of config.example.yaml.
+        """
         return RobotKalmanParams(
             enabled=True,
-            grace_period_rounds=8,
-            max_speed_norm_per_sec=0.2,
-            max_yaw_rate_deg_per_sec=200.0,
-            process_noise_linear_velocity_std=0.03,
-            process_noise_angular_rate_std_deg=45.0,
-            position_sigma_min=0.001,
-            position_sigma_max=0.06,
-            azimuth_sigma_min_deg=2.0,
-            azimuth_sigma_max_deg=30.0,
-            position_sigma_from_area_coefficient=0.006,
-            azimuth_sigma_from_baseline_coefficient_deg=300.0,
+            grace_period_rounds=16,
+            max_speed_norm_per_sec=0.4256,
+            max_yaw_rate_deg_per_sec=289.0,
+            process_noise_linear_velocity_std=0.00217,
+            process_noise_angular_rate_std_deg=2.571,
+            position_sigma_min=0.05608,
+            position_sigma_max=0.4581,
+            # Pinned together: azimuth noise does not follow the 1/baseline law on this
+            # data, so this axis is a measured constant and the coefficient is inert.
+            azimuth_sigma_min_deg=6.864,
+            azimuth_sigma_max_deg=6.864,
+            position_sigma_from_area_coefficient=0.003211,
+            azimuth_sigma_from_baseline_coefficient_deg=0.08568,
         )
 
     @staticmethod

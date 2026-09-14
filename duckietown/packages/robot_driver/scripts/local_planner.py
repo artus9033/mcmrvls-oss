@@ -47,6 +47,8 @@ class RospyLoggerProvider(PlannerLoggerProvider):
 class LocalPlannerNode(DTROS):
     poseStamped: Optional[PoseStamped] = None
     path: PlannerPath = []
+    last_path_received_time: Optional[rospy.Time] = None
+    path_timeout: float = 2.0  # Stop if no path update for 2 seconds
 
     def __init__(self) -> None:
         super(LocalPlannerNode, self).__init__(
@@ -103,9 +105,18 @@ class LocalPlannerNode(DTROS):
 
     def path_callback(self, msg):
         if not msg.poses:
-            rospy.logwarn("[LocalPlannerNode] Received empty path, stopping.")
+            rospy.logwarn("[LocalPlannerNode] Received empty path from global planner (aborted/failed), STOPPING robot immediately.")
             self.planner.reset()
+            self.path = []  # Clear path to stop main loop from driving
+            self.last_path_received_time = None  # Clear timestamp
+            # Immediately publish stop command multiple times for safety
+            self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
+            self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
+            self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
             return
+
+        # Update timestamp for valid path
+        self.last_path_received_time = rospy.Time.now()
 
         rospy.loginfo(
             f"New raw path of length {len(msg.poses)} received from global planner"
@@ -138,6 +149,25 @@ class LocalPlannerNode(DTROS):
         lastWasDriving: bool = False
 
         while not rospy.is_shutdown():
+            # Check for path timeout (global planner failed/stalled without sending empty path)
+            if (
+                self.last_path_received_time is not None
+                and len(self.path) > 0
+                and (rospy.Time.now() - self.last_path_received_time).to_sec() > self.path_timeout
+            ):
+                rospy.logerr(
+                    f"[LocalPlannerNode] Path timeout exceeded ({self.path_timeout}s) - global planner may have failed. STOPPING robot."
+                )
+                self.planner.reset()
+                self.path = []
+                self.last_path_received_time = None
+                self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
+                self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
+                self.driverPub.publish(MSG_STOP_TWIST2DSTAMPED)
+                lastWasDriving = False
+                self.plannerRate.sleep()
+                continue
+
             if self.poseStamped:
                 control = self.planner.step(
                     PlannerPosition(

@@ -20,6 +20,10 @@ export interface SettingsSlice {
 
   // user preference mutators
   toggleDarkMode: () => void;
+
+  // server control actions
+  invalidateCaches: () => void;
+  recalibrateCameras: () => void;
 }
 
 // @ts-ignore-next-line
@@ -76,5 +80,12 @@ export const createSettingsSlice: StoreSliceCreator<SettingsSlice> = (
     set((state) => {
       state.settings.darkMode = !state.settings.darkMode;
     });
+  },
+
+  invalidateCaches() {
+    get().socketio.sioClient.emit('invalidate_caches');
+  },
+  recalibrateCameras() {
+    get().socketio.sioClient.emit('recalibrate_cameras');
   },
 });

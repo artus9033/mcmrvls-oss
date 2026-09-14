@@ -20,7 +20,9 @@ while True:
 
 client.emit("subscribe_all_detections")
 
-buffer = pd.DataFrame(columns=["time", "robotID", "x", "y", "theta"])
+buffer = pd.DataFrame(
+    columns=["time", "robotID", "x", "y", "theta", "raw_x", "raw_y", "raw_azimuth"]
+)
 
 startTime = datetime.datetime.now().strftime("%d.%m.%Y-%H_%M_%S")
 timestampStart = time.time()
@@ -48,12 +50,17 @@ try:
                     dct = args[0]
 
                     for detObj in dct["detections"]:
+                        robot = detObj["robot"]
+                        robot_id = robot["id"] if isinstance(robot, dict) else robot
                         buffer.loc[len(buffer)] = {
                             "time": time.time() - timestampStart,
-                            "robotID": detObj["robot"],
+                            "robotID": robot_id,
                             "x": detObj["x"],
                             "y": detObj["y"],
                             "theta": detObj["azimuth"],
+                            "raw_x": detObj.get("raw_x"),
+                            "raw_y": detObj.get("raw_y"),
+                            "raw_azimuth": detObj.get("raw_azimuth"),
                         }
                         print(".", end="", flush=True)
                 else:

@@ -115,6 +115,8 @@ class MapSegmentationNode(SubscriberNodeBase):
                     occupancyMapGrid.flatten().tolist()
                 )  # row-major order flattening
                 self.mapPub.publish(self.mapGrid)
+        else:
+            rospy.logwarn(f"[MapSegmentationNode] Received unknown event: {event}")
 
     def handle_get_map(self, req: GetMap) -> GetMapResponse:
         with self.mapGridLock:

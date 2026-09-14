@@ -2,6 +2,7 @@ from classes.config import AlgorithmConfig
 from classes.map import CornerDetection
 from classes.marker import CompositeDetection, MarkerDetection
 from classes.types import CornerPointsList, FloatingPoint2D, MarkerData
+import numpy as np
 
 def genCorner(xOffset: float, yOffset: float, width: float = 1.0, height: float = 1.0) -> CornerPointsList:
     return [
@@ -59,24 +60,17 @@ def getSquareExtremeCornerPoints(
     if len(squareMarkers) != 4:
         raise ValueError("getSquareExtremeCornerPoints: corners must have exactly 4 elements")
 
-    squareCentroids = [m.centroid for m in squareMarkers]
-    squareMarkerOrderingMapping = {i: squareCentroids.index(centroid) for i, centroid in enumerate(squareCentroids)}
+    # pick each corner tag's outer vertex geometrically (farthest from the map
+    # center) - vertex names like topLeft follow the tag's own printed frame,
+    # so on detected (possibly rotated) tags they don't correspond to the
+    # map's orientation in the image
+    mapCenter = np.mean([m.centroid for m in squareMarkers], axis=0)
 
     points: list[FloatingPoint2D] = []
 
-    for i, marker in enumerate(squareMarkers):
-        sortedIdx = squareMarkerOrderingMapping[i]  # in TL, TR, BL, BR order
-        match sortedIdx:
-            case 0:
-                points.append(marker.topLeft)
-
-            case 1:
-                points.append(marker.topRight)
-
-            case 2:
-                points.append(marker.bottomLeft)
-
-            case 3:
-                points.append(marker.bottomRight)
+    for marker in squareMarkers:
+        vertices = np.asarray(marker.toPointsList(), dtype=np.float64)
+        outerIdx = int(np.argmax(np.linalg.norm(vertices - mapCenter, axis=1)))
+        points.append(tuple(vertices[outerIdx]))
 
     return points

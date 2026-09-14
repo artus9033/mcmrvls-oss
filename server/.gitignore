@@ -1,0 +1,5 @@
+config.yaml*.bkp
+
+# model checkpoints are deployed out-of-band; keep the directory, not the weights
+res/models/*
+!res/models/.gitkeep

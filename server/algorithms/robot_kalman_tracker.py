@@ -58,6 +58,24 @@ def quad_area_tl_tr_bl_br(
     return float(0.5 * abs(np.sum(x * np.roll(y, -1) - y * np.roll(x, -1))))
 
 
+def normalize_tag_geometry(
+    *,
+    area_px: float,
+    baseline_px: float,
+    img_w: int,
+    img_h: int,
+) -> tuple[float, float]:
+    """
+    Scale-free tag geometry: area as a fraction of the frame, baseline as a
+    fraction of the frame diagonal. These are the sole inputs of the sigma model,
+    so emitting them is enough to refit its coefficients offline.
+    """
+    area_norm = max(area_px / float(max(img_w * img_h, 1)), 1e-12)
+    diag_px = float(np.hypot(img_w, img_h))
+    baseline_norm = max(baseline_px / max(diag_px, 1e-6), 1e-4)
+    return area_norm, baseline_norm
+
+
 def compute_tag_measurement_sigmas(
     *,
     area_px: float,
@@ -67,12 +85,10 @@ def compute_tag_measurement_sigmas(
     p: RobotKalmanParams,
 ) -> tuple[float, float, float]:
     """Return (sigma_x, sigma_y, sigma_psi_rad) for the measurement diagonal R."""
-    denom_area = max(area_px / float(max(img_w * img_h, 1)), 1e-12)
+    denom_area, baseline_norm = normalize_tag_geometry(area_px=area_px, baseline_px=baseline_px, img_w=img_w, img_h=img_h)
     sigma_pos = p.position_sigma_from_area_coefficient / math.sqrt(denom_area)
     sigma_pos = min(max(sigma_pos, p.position_sigma_min), p.position_sigma_max)
 
-    diag_px = float(np.hypot(img_w, img_h))
-    baseline_norm = max(baseline_px / max(diag_px, 1e-6), 1e-4)
     sigma_psi_deg = p.azimuth_sigma_from_baseline_coefficient_deg / baseline_norm
     sigma_psi_deg = min(max(sigma_psi_deg, p.azimuth_sigma_min_deg), p.azimuth_sigma_max_deg)
     sigma_psi_rad = math.radians(sigma_psi_deg)
@@ -89,6 +105,13 @@ class RobotTagMeasurement:
     sigma_y: float
     sigma_psi_rad: float
     composite: CompositeDetection | None
+    # Calibration diagnostics: the two geometric quantities the sigma model above
+    # is a function of, already normalized (area as a fraction of the frame,
+    # baseline as a fraction of the frame diagonal). Carried through to the API
+    # so calibration can refit the sigma coefficients
+    # offline against ground truth. Not used by the filter itself.
+    area_norm: float | None = None
+    baseline_norm: float | None = None
 
 
 @dataclass
@@ -103,6 +126,19 @@ class RobotKalmanTracker:
     def __init__(self, robots_by_id: dict[int, RobotConfig]) -> None:
         self._robots_by_id = robots_by_id
         self._tracks: dict[int, _Track] = {}
+        self.last_innovation: dict[int, tuple[float, float, float]] = {}
+        """
+        Measurement innovation of the most recent update per robot, (dx, dy, dpsi_rad).
+        Whitening is left to the consumer: its lag-1 autocorrelation separates an
+        undersized Q from an oversized R, which mean NIS alone cannot. Diagnostic only.
+        """
+        self.last_nis: dict[int, float] = {}
+        """
+        Normalized innovation squared of the most recent update per robot, chi-square
+        distributed with 3 DoF when Q and R are consistent with the real motion and
+        measurement noise. Diagnostic only: read by the offline tuning tool in
+        calibration, never by the filter.
+        """
 
     def step(
         self,
@@ -115,6 +151,8 @@ class RobotKalmanTracker:
         during the grace period.
         """
         dt = max(float(dt), 1e-4)
+        self.last_nis = {}
+        self.last_innovation = {}
 
         meas_by_id: dict[int, RobotTagMeasurement] = {m.robot.id: m for m in measurements}
 
@@ -146,7 +184,8 @@ class RobotKalmanTracker:
             else:
                 tr = self._tracks[rid]
                 self._predict_track(tr, dt, p)
-                self._update_track(tr, z, R, p)
+                self.last_nis[rid] = self._update_track(tr, z, R, p)
+                self.last_innovation[rid] = self._last_nu
                 tr.missed = 0
                 tr.last_composite = m.composite
 
@@ -159,7 +198,24 @@ class RobotKalmanTracker:
             x, y = float(tr.x[0]), float(tr.x[1])
             azimuth = _rad_to_deg_api(float(tr.x[2]))
             pose_source = "detection" if tr.missed == 0 else "estimation"
-            det = RobotDetection(robot, x, y, azimuth, pose_source=pose_source)
+            raw_x: float | None = None
+            raw_y: float | None = None
+            raw_azimuth: float | None = None
+            if tr.missed == 0 and rid in meas_by_id:
+                m = meas_by_id[rid]
+                raw_x, raw_y, raw_azimuth = m.x, m.y, m.azimuth_deg
+            det = RobotDetection(
+                robot,
+                x,
+                y,
+                azimuth,
+                pose_source=pose_source,
+                raw_x=raw_x,
+                raw_y=raw_y,
+                raw_azimuth=raw_azimuth,
+            )
+            if tr.missed == 0 and rid in meas_by_id:
+                det.set_measurement_diagnostics(meas_by_id[rid])
             det.backing_composite = tr.last_composite if tr.missed == 0 else None
             out.append(det)
 
@@ -169,7 +225,17 @@ class RobotKalmanTracker:
         """When filtering is disabled, emit raw measurements as detections."""
         out: list[RobotDetection] = []
         for m in measurements:
-            det = RobotDetection(m.robot, m.x, m.y, m.azimuth_deg, pose_source="detection")
+            det = RobotDetection(
+                m.robot,
+                m.x,
+                m.y,
+                m.azimuth_deg,
+                pose_source="detection",
+                raw_x=m.x,
+                raw_y=m.y,
+                raw_azimuth=m.azimuth_deg,
+            )
+            det.set_measurement_diagnostics(m)
             det.backing_composite = m.composite
             out.append(det)
         return out
@@ -225,7 +291,8 @@ class RobotKalmanTracker:
         tr.x[3] = float(min(max(tr.x[3], -v_max), v_max))
         tr.x[4] = float(min(max(tr.x[4], -w_max), w_max))
 
-    def _update_track(self, tr: _Track, z: np.ndarray, R: np.ndarray, p: RobotKalmanParams) -> None:
+    def _update_track(self, tr: _Track, z: np.ndarray, R: np.ndarray, p: RobotKalmanParams) -> float:
+        """Applies the measurement and returns the NIS of this update."""
         H = np.zeros((3, 5), dtype=np.float64)
         H[0, 0] = 1.0
         H[1, 1] = 1.0
@@ -241,6 +308,9 @@ class RobotKalmanTracker:
         except np.linalg.LinAlgError:
             Sinv = np.linalg.pinv(S)
 
+        nis = float(nu @ Sinv @ nu)
+        self._last_nu = (float(nu[0]), float(nu[1]), float(nu[2]))
+
         K = tr.P @ H.T @ Sinv
         tr.x = x + K @ nu
         tr.x[2] = _wrap_pi(float(tr.x[2]))
@@ -253,6 +323,7 @@ class RobotKalmanTracker:
         w_max = math.radians(p.max_yaw_rate_deg_per_sec)
         tr.x[3] = float(min(max(tr.x[3], -v_max), v_max))
         tr.x[4] = float(min(max(tr.x[4], -w_max), w_max))
+        return nis
 
     @staticmethod
     def _symmetrize(P: np.ndarray) -> None:

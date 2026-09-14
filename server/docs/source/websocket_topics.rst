@@ -43,13 +43,13 @@ Emitted to ``all_detections`` room when processing completes.
 
    {
      "topDownDetections": [{"data": 585, "topLeft": [x,y], "topRight": [...], "bottomLeft": [...], "bottomRight": [...], "centroid": [x,y]}],
-     "detections": [{"robot": {"id": 500, "host": "d1.local"}, "x": 0.5, "y": 0.3, "azimuth": 90, "poseSource": "detection"}],
+     "detections": [{"robot": {"id": 500, "host": "d1.local"}, "x": 0.5, "y": 0.3, "azimuth": 90, "raw_x": 0.51, "raw_y": 0.29, "raw_azimuth": 91, "poseSource": "detection"}],
      "fps": 22.5,
      "dataStale": false
    }
 
 - ``topDownDetections``: list of marker DTOs (topLeft, topRight, bottomLeft, bottomRight, centroid, data)
-- ``detections``: robot detection DTOs (x, y normalized 0–1, azimuth degrees, ``poseSource``: ``"detection"`` or ``"estimation"`` when the Kalman filter is coasting after a lost tag)
+- ``detections``: robot detection DTOs (filtered ``x``, ``y``, ``azimuth``; optional ``raw_x``, ``raw_y``, ``raw_azimuth`` from the same-frame tag measurement when available; ``poseSource``: ``"detection"`` or ``"estimation"`` when the Kalman filter is coasting after a lost tag)
 - ``fps``: estimated frames per second
 - ``dataStale``: true when the main algorithm loop failed (stitching/processing error); displayed data may be outdated
 

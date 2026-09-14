@@ -11,9 +11,17 @@ import time
 from typing import Any, Dict, cast
 from wsgiref.types import WSGIApplication
 
+from algorithms.floor_atlas import FloorAtlas
 from algorithms.mapSegmentation import updateMapSegmentation
-from algorithms.stitching import matchPairsForStitching, stitchImagePacks, topDownWarp
+from algorithms.topdown import create_topdown_strategy
+from algorithms.runtime_calibration import (
+    accumulate_tag_quads,
+    calibrate_from_accumulated_quads,
+)
+from algorithms.solver_pipeline import process_epipolar_pairs_from_image_packs
+from algorithms.stitching import matchPairsForStitching, stitchImagePacks
 from classes.config import AlgorithmConfig, CacheConfig, PreallocationConfig
+from pathlib import Path
 from classes.io.VideoCaptureWrapper.AbstractVideoCaptureWrapper import AbstractVideoCaptureWrapper
 from classes.io.VideoCaptureWrapper.errors import VideoCaptureError, VideoEndedException
 from classes.io.VideoCaptureWrapperFactory.LiveVideoCaptureWrapperFactory import LiveVideoCaptureWrapperFactory
@@ -33,13 +41,17 @@ import numpy as np
 from pynput import keyboard
 import socketio
 from utils.constants import DEFAULT_RECALC_HEURISTIC_EXTINGUISHING_MARKER_CONSECUTIVE_ROUNDS_DELAY, RECALC_HEURISTIC_DISPLACED_DETECTIONS_MIN_DIFF_NORM_PERCENT_THRESH, serverRootPath
-from utils.geometry import pointsDistance
 from utils.plotting import drawDetectionsOnImage, putText
 from utils.tracing import Tracing
+from utils.geometry import pointsDistance
 from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader, make_server
 
+# below: flag that controls at runtime whether to run on a pre-recorded video file (then
+# the catalog containing camera captures shall be passed in) or None to run live from available cameras
+RUN_FROM_PLAYBACK_DIRECTORY: str | None = os.environ.get("RUN_FROM_PLAYBACK_DIRECTORY", None)
+
 configReader = ConfigReader()
-readConfig = configReader.readConfig()
+readConfig = configReader.readConfig(playback_scenario=RUN_FROM_PLAYBACK_DIRECTORY)
 httpConfig = cast(Dict, readConfig.get("http"))
 isDebug: bool = cast(bool, readConfig.get("debug"))
 isProfiling: bool = cast(bool, readConfig.get("profiling"))
@@ -108,6 +120,11 @@ def root():
 def onConnect(sid, environ):
     httpLogger.info(f"> Client connected: {sid}")
     SioRoomsStateTracker.handleConnected(sid)
+    # memory is assigned later in module load; connect only fires after the server is up.
+    try:
+        sio.emit("system_status", {"calibration": memory.calibration_telemetry()}, to=sid)
+    except NameError:
+        pass
 
 
 @sio.on("disconnect")  # pyright: ignore[reportOptionalCall]
@@ -234,9 +251,25 @@ def onUnsubscribeRobot(sid, robotId):
     sio.leave_room(sid, genSingleRobotRoom(robotId))
 
 
-# below: flag that controls at runtime whether to run on a pre-recorded video file (then
-# the catalog containing camera captures shall be passed in) or None to run live from available cameras
-RUN_FROM_PLAYBACK_DIRECTORY: str | None = os.environ.get("RUN_FROM_PLAYBACK_DIRECTORY", None)
+@sio.on("invalidate_caches")  # pyright: ignore[reportOptionalCall]
+def onInvalidateCaches(sid):
+    httpLogger.info(f"> Client {sid} requested cache invalidation")
+    memory.invalidate_caches(reason="frontend request")
+    sio.emit("invalidate_caches_ack", {"ok": True}, to=sid)
+
+
+@sio.on("recalibrate_cameras")  # pyright: ignore[reportOptionalCall]
+def onRecalibrateCameras(sid):
+    httpLogger.info(f"> Client {sid} requested camera recalibration")
+    ok = memory.request_recalibrate()
+    if not ok:
+        sio.emit(
+            "recalibrate_cameras_ack",
+            {"ok": False, "error": "Recalibration requires the epipolar solver"},
+            to=sid,
+        )
+        return
+    sio.emit("recalibrate_cameras_ack", {"ok": True}, to=sid)
 
 
 _global_robot_kalman = RobotKalmanParams.from_config_dict(readConfig.get("robotKalmanFilter"))
@@ -248,6 +281,11 @@ configured_robots_list = [
     )
     for robot_entry in readConfig["robots"]
 ]
+
+camera_calibrations: dict = {}
+_auto_cal_cfg = readConfig.get("autoCalibrateOnStart")
+_use_epipolar = bool(readConfig.get("useEpipolarGeometry", False))
+_auto_calibrate = _use_epipolar if _auto_cal_cfg is None else bool(_auto_cal_cfg)
 
 algorithmConfig = AlgorithmConfig(
     mapDefinition=readConfig["map"],
@@ -264,9 +302,19 @@ algorithmConfig = AlgorithmConfig(
     markerVisibilityEwmaAlpha=float(readConfig.get("markerVisibilityEwmaAlpha", 0.35)),
     markerVisibilityThresholdHigh=float(readConfig.get("markerVisibilityThresholdHigh", 0.75)),
     markerVisibilityThresholdLow=float(readConfig.get("markerVisibilityThresholdLow", 0.25)),
+    markerDetector=str(readConfig.get("markerDetector", "apriltag")),
+    markerDetectorParams=readConfig.get("markerDetectorParams"),
+    mapSegmentation=readConfig.get("mapSegmentation"),
     caching=cacheConfig,
     preallocation=preallocationConfig,
     logger=algorithmLogger,
+    useEpipolarGeometry=_use_epipolar,
+    usePerCameraSolver=bool(readConfig.get("usePerCameraSolver", False)),
+    topDownFitUseInteriorTags=bool(readConfig.get("topDownFitUseInteriorTags", True)),
+    useAtlasCornerResolution=bool(readConfig.get("useAtlasCornerResolution", True)),
+    topDownStrategy=str(readConfig.get("topDownStrategy", "mosaic")),
+    camera_calibrations=camera_calibrations,
+    autoCalibrateOnStart=_auto_calibrate if _use_epipolar else False,
 )
 
 memory = InterThreadMemory(
@@ -336,6 +384,23 @@ def mainAlgorithmWorker(memory: InterThreadMemory):
 
     markerPositionsLastRound: dict[int, CompositeDetection] = {}
 
+    # On-demand / startup calibration accumulation
+    calib_accum_active = False
+    calib_accum_frames = 0
+    calib_accum_target_frames = 20
+    calib_quad_buckets: dict = {}
+    calib_image_sizes: dict[str, tuple[int, int]] = {}
+    # Robots move — exclude them from the floor-tag atlas / calibration target.
+    calib_exclude_tag_ids = set(int(r) for r in memory.algorithmConfig.configuredRobotIDs)
+
+    # Live floor-tag atlas: exact per-raw-camera -> map homographies, feeding the
+    # per-camera consensus solver, the interior-tag top-down fit, and the
+    # piecewise map-boundary preview overlay.
+    floorAtlas = FloorAtlas(memory.algorithmConfig)
+    memory.algorithmState.floorAtlas = floorAtlas
+    topDownStrategy = create_topdown_strategy(memory.algorithmConfig)
+    algorithmLogger.info(f"Top-down strategy: {type(topDownStrategy).__name__}")
+
     while memory.isRunning():
         try:
             startTime = time.time()
@@ -361,6 +426,80 @@ def mainAlgorithmWorker(memory: InterThreadMemory):
                     )
 
             stitchingFailed: bool = False
+            raw_camera_packs = list(imagePacks)
+
+            with Tracing.ScopedZone("floor_atlas"):
+                floorAtlas.observe(raw_camera_packs)
+                if floorAtlas.maybe_solve(logger=memory.algorithmThreadLogger):
+                    memory.emit_cache_event(
+                        CacheEvent(
+                            event_type="floor_atlas_resolved",
+                            data={"generation": floorAtlas.solve_generation, "cameras": len(floorAtlas.camera_h)},
+                        )
+                    )
+                if memory.algorithmConfig.usePerCameraSolver or memory.algorithmConfig.topDownStrategy == "orthorectified":
+                    # Per-camera consensus robot poses (map-normalized); consumed
+                    # by topDownWarp in place of the mosaic-derived measurements.
+                    memory.algorithmState.percamRobotMeasurements = floorAtlas.robot_measurements(
+                        raw_camera_packs,
+                        memory.algorithmConfig,
+                    )
+
+            # Start or continue on-demand / startup calibration collection
+            if memory.algorithmConfig.useEpipolarGeometry:
+                if not calib_accum_active and memory.take_recalibrate_request():
+                    calib_accum_active = True
+                    calib_accum_frames = 0
+                    calib_quad_buckets = {}
+                    calib_image_sizes = {}
+                    algorithmLogger.info("📷 Camera calibration: collecting frames…")
+
+                if calib_accum_active:
+                    accumulate_tag_quads(raw_camera_packs, calib_exclude_tag_ids, calib_quad_buckets)
+                    for pack in raw_camera_packs:
+                        if pack.image is None:
+                            continue
+                        h, w = pack.image.shape[:2]
+                        calib_image_sizes[str(pack.stitchingStageDescription)] = (w, h)
+                    calib_accum_frames += 1
+
+                    if calib_accum_frames >= calib_accum_target_frames:
+                        try:
+                            with Tracing.ScopedZone("runtime_calibration"):
+                                new_calibrations = calibrate_from_accumulated_quads(
+                                    calib_quad_buckets,
+                                    calib_image_sizes,
+                                    memory.algorithmConfig,
+                                    min_tags=2,
+                                    min_observations=2,
+                                    logger=algorithmLogger,
+                                )
+                            memory.algorithmConfig.camera_calibrations = {
+                                **memory.algorithmConfig.camera_calibrations,
+                                **new_calibrations,
+                            }
+                            algorithmLogger.info(
+                                "📷 Camera calibration complete: %d camera(s) (memory-only)",
+                                len(new_calibrations),
+                            )
+                            memory.set_calibration_result(ok=True)
+                            memory.invalidate_caches(reason="camera recalibration")
+                        except Exception as exc:  # noqa: BLE001
+                            algorithmLogger.error("📷 Camera calibration failed: %s", exc)
+                            memory.set_calibration_result(ok=False, error=str(exc))
+                        finally:
+                            calib_accum_active = False
+                            calib_accum_frames = 0
+                            calib_quad_buckets = {}
+                            calib_image_sizes = {}
+
+            if memory.algorithmConfig.useEpipolarGeometry:
+                process_epipolar_pairs_from_image_packs(
+                    raw_camera_packs,
+                    memory.algorithmState,
+                    memory.algorithmConfig,
+                    memory.algorithmThreadLogger,
+                )
 
             # emit camera previews just to the clients that are subscribed to them
             with Tracing.ScopedZone("emit_previews"):
@@ -526,8 +665,18 @@ def mainAlgorithmWorker(memory: InterThreadMemory):
 
                         # main algorithm work
                         with memory._resultsLock:
-                            topDownWarp(
+                            memory.algorithmResultsHolder.visibilityTelemetry = {
+                                "perCamera": [
+                                    {
+                                        "camera": camera_index,
+                                        "markers": list(image_pack.compositeDetectionsStore.keys()),
+                                    }
+                                    for camera_index, image_pack in enumerate(raw_camera_packs)
+                                ],
+                            }
+                            topDownStrategy.process(
                                 stitchingImagePack=stitchingImagePack,
+                                raw_camera_packs=raw_camera_packs,
                                 state=memory.algorithmState,
                                 config=memory.algorithmConfig,
                                 logger=memory.algorithmLogger,
@@ -559,6 +708,14 @@ def mainAlgorithmWorker(memory: InterThreadMemory):
                                 memory.algorithmState.nextIterForceRecalcReason = "DIFF_DISPLACED_DETECTIONS_POST_STITCHING"
                                 memory.algorithmState.imagePackDirty = True
                                 memory.stitchingStatesByStitchingStages.clear()
+                                # NOTE: the floor atlas is deliberately NOT
+                                # invalidated here - this heuristic measures
+                                # displacement in the STITCHED frame, which
+                                # jitters whenever stitch homographies are
+                                # recalculated and says nothing about raw
+                                # camera geometry. The atlas detects genuine
+                                # camera movement itself, in the raw frame
+                                # (see FloorAtlas.observe).
                                 memory.dataStale = True
                                 memory.sioDataDirty.set()
                                 processingZoneColor = Tracing.COLOR_DARKGREEN
@@ -719,6 +876,7 @@ def sioEmitterWorker(memory: InterThreadMemory):
                 robotDetections = [det.toDTO(include_robot_info=True) for det in memory.algorithmResultsHolder.robotDetections]
                 fps = memory.algorithmResultsHolder.fps
             try:
+                visibility = memory.algorithmResultsHolder.visibilityTelemetry
                 sio.emit(
                     event="all_detections",
                     room=SioRoomsStateTracker.SIO_ROOM_ALL_DETECTIONS,
@@ -727,6 +885,8 @@ def sioEmitterWorker(memory: InterThreadMemory):
                         "detections": robotDetections,
                         "fps": fps,
                         "dataStale": memory.dataStale,
+                        "visibility": visibility,
+                        "calibration": memory.calibration_telemetry(),
                     },
                 )
             except Exception as e:  # noqa: BLE001
@@ -990,21 +1150,8 @@ def keyboardThreadWorker(memory: InterThreadMemory):
             if event and event.key == keycodeReload:
                 if not wasPressed:
                     print("💣💣💣 Resetting caches on user request 💣💣💣")
-                    memory.algorithmState.imagePackDirty = True
+                    memory.invalidate_caches(reason="user input")
                     wasPressed = True
-
-                    for stitchingState in memory.stitchingStatesByStitchingStages.values():
-                        stitchingState.markNeedsHomographyRecalculation("user input")
-                        memory.emit_cache_event(
-                            CacheEvent(
-                                event_type="homography_cache_invalidated",
-                                data={
-                                    "stage": str(stitchingState.description),
-                                    "reason": "user input",
-                                    "cache_type": "stitching",
-                                },
-                            )
-                        )
             else:
                 wasPressed = False
 
