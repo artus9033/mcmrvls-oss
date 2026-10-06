@@ -1,5 +1,8 @@
 # Multi-Camera Multi-Robot Visual Localization System (M-C M-R VLS)
 
+Demo of the system in action:
+[![Demo video](demo.jpg)](./demo.mp4)
+
 ## Unified Solver Architecture
 
 The system now uses a **pluggable solver architecture** that abstracts geometry computation strategies:
